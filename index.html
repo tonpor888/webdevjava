@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>NASA APOD & Chart Example</title>
+    <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/lodash/lodash.min.js"></script>
+    <style>
+        /* Animated Gradient Background */
+        body {
+            font-family: 'Segoe UI', Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            min-height: 100vh;
+            background: linear-gradient(-45deg, #1e3c72, #2a5298, #1976d2, #43a047, #fbc02d, #e53935, #8e24aa);
+            background-size: 400% 400%;
+            animation: gradientBG 15s ease infinite;
+        }
+        @keyframes gradientBG {
+            0% {background-position: 0% 50%;}
+            50% {background-position: 100% 50%;}
+            100% {background-position: 0% 50%;}
+        }
+        h1 {
+            text-align: center;
+            color: #fff;
+            margin-top: 32px;
+            text-shadow: 0 2px 8px rgba(30,60,114,0.3);
+        }
+        #apod-list {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            gap: 20px;
+            margin: 30px auto 40px auto;
+            max-width: 1200px;
+            padding: 0;
+            list-style: none;
+        }
+        .apod-card {
+            background: rgba(255,255,255,0.95);
+            border-radius: 16px;
+            box-shadow: 0 2px 12px rgba(30,60,114,0.10), 0 1.5px 4px rgba(30,60,114,0.08);
+            width: 320px;
+            padding: 18px 16px 16px 16px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            transition: 
+                box-shadow 0.35s cubic-bezier(.4,2,.3,1), 
+                transform 0.35s cubic-bezier(.4,2,.3,1);
+            cursor: pointer;
+            position: relative;
+            overflow: hidden;
+        }
+        .apod-card::before {
+            content: "";
+            position: absolute;
+            top: -60px; left: -60px;
+            width: 120px; height: 120px;
+            background: radial-gradient(circle, #1976d2 0%, transparent 80%);
+            opacity: 0;
+            transition: opacity 0.4s;
+            z-index: 0;
+        }
+        .apod-card:hover {
+            box-shadow: 0 8px 32px 0 rgba(30,60,114,0.22), 0 4px 16px rgba(30,60,114,0.13);
+            transform: translateY(-8px) scale(1.045) rotate(-1deg);
+        }
+        .apod-card:hover::before {
+            opacity: 0.18;
+        }
+        .apod-card img, .apod-card iframe {
+            width: 100%;
+            max-width: 280px;
+            height: 180px;
+            object-fit: cover;
+            margin-bottom: 12px;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(30,60,114,0.08);
+            z-index: 1;
+        }
+        .apod-title {
+            font-size: 1.1rem;
+            font-weight: bold;
+            margin-bottom: 8px;
+            text-align: center;
+            color: #222;
+            min-height: 48px;
+            z-index: 1;
+        }
+        .apod-date {
+            color: #1976d2;
+            font-size: 1rem;
+            margin-bottom: 6px;
+            z-index: 1;
+        }
+        .apod-desc {
+            font-size: 0.95rem;
+            color: #555;
+            text-align: center;
+            margin-bottom: 8px;
+            min-height: 40px;
+            z-index: 1;
+        }
+        #chart-container {
+            max-width: 700px;
+            margin: 0 auto 40px auto;
+            background: rgba(255,255,255,0.97);
+            border-radius: 14px;
+            box-shadow: 0 2px 12px rgba(30,60,114,0.10);
+            padding: 24px 16px;
+        }
+        #load-btn {
+            display: block;
+            margin: 24px auto 0 auto;
+            padding: 12px 32px;
+            font-size: 1.1rem;
+            background: linear-gradient(90deg, #1976d2 60%, #43a047 100%);
+            color: #fff;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: bold;
+            letter-spacing: 1px;
+            box-shadow: 0 2px 8px rgba(30,60,114,0.10);
+            transition: background 0.3s, transform 0.2s;
+        }
+        #load-btn:hover {
+            background: linear-gradient(90deg, #43a047 0%, #1976d2 100%);
+            transform: scale(1.06);
+        }
+        canvas {
+            background: #fff;
+            border-radius: 8px;
+            margin-bottom: 16px;
+        }
+        hr {
+            border: none;
+            border-top: 2px solid #eee;
+            margin: 32px 0;
+        }
+    </style>
+</head>
+<body>
+    <h1>NASA APOD (7 วันล่าสุด)</h1>
+    <button id="load-btn" onclick="fetchApods()">โหลดข้อมูลภาพจาก NASA</button>
+    <div id="chart-container" style="display:none;">
+        <canvas id="mediaChart"></canvas>
+        <hr style="margin:32px 0;">
+        <canvas id="uploadChart"></canvas>
+    </div>
+    <ul id="apod-list"></ul>
+
+    <script>
+        let chartInstance = null;
+        let uploadChartInstance = null;
+
+        function getLast7Days() {
+            const days = [];
+            const today = new Date();
+            for (let i = 6; i >= 0; i--) {
+                const d = new Date(today);
+                d.setDate(today.getDate() - i);
+                days.push(d.toISOString().slice(0, 10));
+            }
+            return {start: days[0], end: days[6], days};
+        }
+
+        async function fetchApods() {
+            const apodList = document.getElementById('apod-list');
+            const chartContainer = document.getElementById('chart-container');
+            apodList.innerHTML = '<li>กำลังโหลดข้อมูล...</li>';
+            chartContainer.style.display = 'none';
+
+            const {start, end, days} = getLast7Days();
+            try {
+                const response = await axios.get(
+                    `https://api.nasa.gov/planetary/apod?api_key=DEMO_KEY&start_date=${start}&end_date=${end}`
+                );
+                const apods = response.data;
+
+                // แสดงข้อมูลภาพ
+                apodList.innerHTML = '';
+                apods.forEach(apod => {
+                    const li = document.createElement('li');
+                    li.className = 'apod-card';
+                    li.innerHTML = `
+                        <div class="apod-title">${apod.title}</div>
+                        <div class="apod-date">${apod.date}</div>
+                        ${
+                            apod.media_type === 'image'
+                            ? `<img src="${apod.url}" alt="${apod.title}">`
+                            : `<iframe src="${apod.url}" frameborder="0" allowfullscreen></iframe>`
+                        }
+                        <div class="apod-desc">${apod.explanation.slice(0, 100)}...</div>
+                    `;
+                    apodList.appendChild(li);
+                });
+
+                // Pie Chart: media_type
+                const grouped = _.groupBy(apods, 'media_type');
+                const labels = Object.keys(grouped);
+                const data = labels.map(type => grouped[type].length);
+
+                // Bar Chart: uploads per day
+                const uploadsPerDay = days.map(day =>
+                    apods.filter(apod => apod.date === day).length
+                );
+
+                chartContainer.style.display = 'block';
+
+                // Pie Chart
+                if (chartInstance) chartInstance.destroy();
+                const ctx = document.getElementById('mediaChart').getContext('2d');
+                chartInstance = new Chart(ctx, {
+                    type: 'pie',
+                    data: {
+                        labels: labels,
+                        datasets: [{
+                            label: 'จำนวนแต่ละประเภท',
+                            data: data,
+                            backgroundColor: ['#1976d2', '#43a047', '#fbc02d', '#e53935', '#8e24aa'],
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        plugins: {
+                            legend: { display: true },
+                            title: {
+                                display: true,
+                                text: 'จำนวนภาพแต่ละประเภท (media_type) ใน 7 วันล่าสุด'
+                            }
+                        }
+                    }
+                });
+
+                // Bar Chart
+                if (uploadChartInstance) uploadChartInstance.destroy();
+                const ctx2 = document.getElementById('uploadChart').getContext('2d');
+                uploadChartInstance = new Chart(ctx2, {
+                    type: 'bar',
+                    data: {
+                        labels: days,
+                        datasets: [{
+                            label: 'จำนวนภาพที่อัปโหลดแต่ละวัน',
+                            data: uploadsPerDay,
+                            backgroundColor: '#1976d2'
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        plugins: {
+                            legend: { display: false },
+                            title: {
+                                display: true,
+                                text: 'จำนวนการอัปโหลดภาพในแต่ละวัน (7 วันล่าสุด)'
+                            }
+                        },
+                        scales: {
+                            y: { beginAtZero: true, precision: 0 }
+                        }
+                    }
+                });
+
+            } catch (error) {
+                apodList.innerHTML = '<li>เกิดข้อผิดพลาดในการโหลดข้อมูลจาก NASA</li>';
+                chartContainer.style.display = 'none';
+            }
+        }
+    </script>
+</body>
+</html>

@@ -257,7 +257,12 @@
                                 display: true,
                                 text: 'จำนวนการอัปโหลดภาพในแต่ละวัน (7 วันล่าสุด)'
                             }
-                        },
+                 
+            }
+        }
+    </script>
+</body>
+</html>       },
                         scales: {
                             y: { beginAtZero: true, precision: 0 }
                         }
@@ -267,8 +272,3 @@
             } catch (error) {
                 apodList.innerHTML = '<li>เกิดข้อผิดพลาดในการโหลดข้อมูลจาก NASA</li>';
                 chartContainer.style.display = 'none';
-            }
-        }
-    </script>
-</body>
-</html>
